@@ -2,8 +2,17 @@ services:
   - type: web
     name: metasiberian-agent
     env: node
-    buildCommand: cd metasiberian-agent && bun install && bun run build
-    startCommand: cd metasiberian-agent && bun run start
+    nodeVersion: 23.x
+    rootDir: metasiberian-agent
+    buildCommand: |
+      curl -fsSL https://bun.sh/install | bash
+      export PATH="$HOME/.bun/bin:$PATH"
+      bun --version
+      bun install
+      bun run build
+    startCommand: |
+      export PATH="$HOME/.bun/bin:$PATH"
+      bun run start
     envVars:
       - key: NODE_ENV
         value: production
