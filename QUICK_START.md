@@ -62,7 +62,7 @@ git push -u origin main
 3. Добавьте:
 
 ```
-OPENAI_API_KEY=sk-dVAfNONRGf76I6PgCf4236B378E84c7dAcE993476509899d
+OPENAI_API_KEY=sk-proj-AIcVdQx68yQmFkvbXkGAmYndNWsdTqQ0JN2JnseUoG1La
 NODE_ENV=production
 ```
 
