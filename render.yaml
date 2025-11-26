@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: metasiberian-agent
+    name: aichat
     env: node
     nodeVersion: 23.x
     rootDir: metasiberian-agent
