@@ -9,6 +9,11 @@ services:
       export PATH="$HOME/.bun/bin:$PATH"
       bun --version
       bun install
+      # Build client first to include latest changes
+      # Client is in ../packages/client relative to metasiberian-agent
+      if [ -d "../packages/client" ]; then
+        cd ../packages/client && bun run build && cd ../../metasiberian-agent
+      fi
       bun run build
     startCommand: |
       export PATH="$HOME/.bun/bin:$PATH"
