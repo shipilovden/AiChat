@@ -14,26 +14,28 @@ services:
       if [ -d "../packages/client" ]; then
         echo "Building client..."
         cd ../packages/client && bun run build && cd ../../metasiberian-agent
-        # Copy built client to node_modules so server can use it
-        if [ -d "../packages/client/dist" ] && [ -d "node_modules/@elizaos/client" ]; then
-          echo "Copying client dist to node_modules..."
-          rm -rf node_modules/@elizaos/client/dist
-          cp -r ../packages/client/dist node_modules/@elizaos/client/
+        # Server uses client from node_modules/@elizaos/server/dist/client
+        # Copy built client there so server can use updated version
+        if [ -d "../packages/client/dist" ] && [ -d "node_modules/@elizaos/server" ]; then
+          echo "Copying client dist to server node_modules..."
+          mkdir -p node_modules/@elizaos/server/dist/client
+          rm -rf node_modules/@elizaos/server/dist/client/*
+          cp -r ../packages/client/dist/* node_modules/@elizaos/server/dist/client/
           # Verify the copy worked
-          if [ -f "node_modules/@elizaos/client/dist/index.html" ]; then
-            echo "✓ Client copied successfully"
+          if [ -f "node_modules/@elizaos/server/dist/client/index.html" ]; then
+            echo "✓ Client copied to server successfully"
             # Verify title is correct
-            if grep -q "AiChat - Client" node_modules/@elizaos/client/dist/index.html; then
+            if grep -q "AiChat - Client" node_modules/@elizaos/server/dist/client/index.html; then
               echo "✓ Title is correct: AiChat - Client"
             else
               echo "⚠ Warning: Title may not be correct"
-              cat node_modules/@elizaos/client/dist/index.html | grep -i title
+              grep -i title node_modules/@elizaos/server/dist/client/index.html
             fi
           else
-            echo "✗ Error: Client copy failed"
+            echo "✗ Error: Client copy to server failed"
           fi
         else
-          echo "⚠ Warning: Client dist or node_modules/@elizaos/client not found"
+          echo "⚠ Warning: Client dist or node_modules/@elizaos/server not found"
         fi
       else
         echo "⚠ Warning: ../packages/client directory not found"
