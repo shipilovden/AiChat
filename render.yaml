@@ -13,7 +13,10 @@ services:
       # Client is in ../packages/client relative to metasiberian-agent
       if [ -d "../packages/client" ]; then
         echo "Building client..."
-        cd ../packages/client && bun run build && cd ../../metasiberian-agent
+        # Install client dependencies first
+        cd ../packages/client && bun install && cd ../../metasiberian-agent
+        # Build client using vite directly (skip type checking for faster build)
+        cd ../packages/client && bunx vite build && cd ../../metasiberian-agent
         # Server uses client from node_modules/@elizaos/server/dist/client
         # Copy built client there so server can use updated version
         if [ -d "../packages/client/dist" ] && [ -d "node_modules/@elizaos/server" ]; then
