@@ -24,9 +24,11 @@ export default function TelegramAuthModal() {
   const [error, setError] = useState<string | null>(null);
   const [widgetReady, setWidgetReady] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
+  const [isProcessingAuth, setIsProcessingAuth] = useState(false);
 
   // Modal should be open if not authenticated and not loading
-  const isOpen = !isLoading && !isAuthenticated;
+  // Also keep open while processing authentication to prevent premature closing
+  const isOpen = !isLoading && !isAuthenticated && !isProcessingAuth;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -90,6 +92,7 @@ export default function TelegramAuthModal() {
 
       if (event.data?.type === 'telegram-auth-success') {
         try {
+          setIsProcessingAuth(true); // Prevent modal from closing prematurely
           const { user, sessionId } = event.data;
           clientLogger.info('Telegram auth success received', { userId: user.id, sessionId });
           
@@ -97,16 +100,20 @@ export default function TelegramAuthModal() {
           setUser(user, sessionId);
           setError(null);
           
-          // Force check auth to update state
-          // The modal will close automatically when isAuthenticated becomes true
-          clientLogger.info('User authenticated, modal should close');
+          // Give time for state to update before allowing modal to close
+          setTimeout(() => {
+            setIsProcessingAuth(false);
+            clientLogger.info('User authenticated, modal should close');
+          }, 500);
         } catch (error) {
           clientLogger.error('Telegram login error:', error);
           setError('Authentication failed. Please try again.');
+          setIsProcessingAuth(false);
         }
       } else if (event.data?.error) {
         clientLogger.error('Telegram auth error:', event.data.error);
         setError('Authentication failed: ' + event.data.error);
+        setIsProcessingAuth(false);
       }
     };
 
@@ -367,11 +374,20 @@ export default function TelegramAuthModal() {
                     clientLogger.info('Opening Telegram OAuth manually', { oauthUrl });
                     
                     // Open in popup window so we can receive postMessage
+                    // Use specific window name to prevent opening in same window
                     const popup = window.open(
                       oauthUrl, 
-                      'telegram-auth',
-                      'width=500,height=600,scrollbars=yes,resizable=yes'
+                      'telegram-oauth-popup',
+                      'width=500,height=600,scrollbars=yes,resizable=yes,menubar=no,toolbar=no,location=no'
                     );
+                    
+                    if (!popup) {
+                      setError('Popup blocked. Please allow popups for this site and try again.');
+                      return;
+                    }
+                    
+                    // Focus popup
+                    popup.focus();
                     
                     // Listen for popup to close (user completed auth)
                     const checkPopup = setInterval(() => {
