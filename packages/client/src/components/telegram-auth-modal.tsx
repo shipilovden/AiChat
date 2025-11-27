@@ -17,7 +17,7 @@ import { LogIn } from 'lucide-react';
  * Shows a modal dialog requiring Telegram authentication before accessing the site
  */
 export default function TelegramAuthModal() {
-  const { isAuthenticated, isLoading, setUser } = useAuth();
+  const { isAuthenticated, isLoading, setUser, checkAuth } = useAuth();
   const widgetContainerRef = useRef<HTMLDivElement>(null);
   const scriptLoadedRef = useRef(false);
   const [botUsername, setBotUsername] = useState<string | null>(null);
@@ -92,19 +92,21 @@ export default function TelegramAuthModal() {
 
       if (event.data?.type === 'telegram-auth-success') {
         try {
-          setIsProcessingAuth(true); // Prevent modal from closing prematurely
+          // Already processing, just ensure state is set
+          setIsProcessingAuth(true);
           const { user, sessionId } = event.data;
-          clientLogger.info('Telegram auth success received', { userId: user.id, sessionId });
+          clientLogger.info('Telegram auth success received via postMessage', { userId: user.id, sessionId });
           
           // Update auth context directly with user and session
           setUser(user, sessionId);
           setError(null);
           
           // Give time for state to update before allowing modal to close
+          // Wait longer to ensure AuthContext has updated isAuthenticated
           setTimeout(() => {
             setIsProcessingAuth(false);
             clientLogger.info('User authenticated, modal should close');
-          }, 500);
+          }, 1000);
         } catch (error) {
           clientLogger.error('Telegram login error:', error);
           setError('Authentication failed. Please try again.');
@@ -373,6 +375,11 @@ export default function TelegramAuthModal() {
                     
                     clientLogger.info('Opening Telegram OAuth manually', { oauthUrl });
                     
+                    // Mark as processing auth BEFORE opening popup
+                    // This prevents modal from closing prematurely
+                    setIsProcessingAuth(true);
+                    setError(null);
+                    
                     // Open in popup window so we can receive postMessage
                     // Use specific window name to prevent opening in same window
                     const popup = window.open(
@@ -383,6 +390,7 @@ export default function TelegramAuthModal() {
                     
                     if (!popup) {
                       setError('Popup blocked. Please allow popups for this site and try again.');
+                      setIsProcessingAuth(false);
                       return;
                     }
                     
@@ -405,10 +413,17 @@ export default function TelegramAuthModal() {
                               if (message.type === 'telegram-auth-success') {
                                 clientLogger.info('Found auth success in localStorage after popup close', message);
                                 localStorage.removeItem('telegram-auth-success');
-                                handleMessage({ 
-                                  origin: window.location.origin, 
-                                  data: message 
-                                } as MessageEvent);
+                                // Process the message
+                                if (message.user && message.sessionId) {
+                                  setIsProcessingAuth(true);
+                                  setUser(message.user, message.sessionId);
+                                  setError(null);
+                                  // Give time for state to update
+                                  setTimeout(() => {
+                                    setIsProcessingAuth(false);
+                                    clientLogger.info('User authenticated via localStorage, modal should close');
+                                  }, 500);
+                                }
                                 return;
                               }
                             }
@@ -417,10 +432,17 @@ export default function TelegramAuthModal() {
                           }
                           
                           // If no message found, try to get session from server
-                          // The focus listener in AuthContext will also check
                           clientLogger.info('No localStorage message, checking server for session');
-                          // Trigger focus event to check auth
-                          window.dispatchEvent(new Event('focus'));
+                          // Check auth status from server
+                          checkAuth().then(() => {
+                            // Give time for state to update
+                            setTimeout(() => {
+                              setIsProcessingAuth(false);
+                              clientLogger.info('Auth check completed after popup close');
+                            }, 500);
+                          }).catch(() => {
+                            setIsProcessingAuth(false);
+                          });
                         }, 1500);
                       }
                     }, 500);

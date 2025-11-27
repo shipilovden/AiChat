@@ -15,6 +15,7 @@ interface AuthContextType {
   setUser: (user: TelegramUser, sessionId: string) => void;
   logout: () => Promise<void>;
   isLoading: boolean;
+  checkAuth: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -107,6 +108,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser,
         logout,
         isLoading,
+        checkAuth,
       }}
     >
       {children}
