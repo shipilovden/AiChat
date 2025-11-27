@@ -241,10 +241,22 @@ export function authRouter(): express.Router {
                   }
                 }
                 
-                // Store in localStorage as fallback
+                // Store in localStorage as fallback (for opener window)
+                // Note: This will only work if callback opens in same origin
+                // For cross-window communication, we rely on postMessage
                 try {
+                  // Try to access opener's localStorage
+                  if (window.opener && !window.opener.closed) {
+                    try {
+                      window.opener.localStorage.setItem('telegram-auth-success', JSON.stringify(message));
+                      console.log('Message stored in opener localStorage');
+                    } catch (e) {
+                      console.warn('Cannot access opener localStorage (cross-origin)', e);
+                    }
+                  }
+                  // Also store in current window (in case callback is in same window)
                   localStorage.setItem('telegram-auth-success', JSON.stringify(message));
-                  console.log('Message stored in localStorage');
+                  console.log('Message stored in current localStorage');
                 } catch (e) {
                   console.error('Error storing in localStorage:', e);
                 }

@@ -371,11 +371,34 @@ export default function TelegramAuthModal() {
                       if (popup?.closed) {
                         clearInterval(checkPopup);
                         clientLogger.info('OAuth popup closed, checking auth status');
-                        // Check if user is now authenticated
+                        
+                        // Wait a bit for callback to complete and store session
                         setTimeout(() => {
-                          // Force re-check authentication
-                          window.location.reload();
-                        }, 500);
+                          // Check localStorage for auth success (fallback)
+                          try {
+                            const stored = localStorage.getItem('telegram-auth-success');
+                            if (stored) {
+                              const message = JSON.parse(stored);
+                              if (message.type === 'telegram-auth-success') {
+                                clientLogger.info('Found auth success in localStorage after popup close', message);
+                                localStorage.removeItem('telegram-auth-success');
+                                handleMessage({ 
+                                  origin: window.location.origin, 
+                                  data: message 
+                                } as MessageEvent);
+                                return;
+                              }
+                            }
+                          } catch (e) {
+                            clientLogger.warn('Error checking localStorage', e);
+                          }
+                          
+                          // If no message found, try to get session from server
+                          // The focus listener in AuthContext will also check
+                          clientLogger.info('No localStorage message, checking server for session');
+                          // Trigger focus event to check auth
+                          window.dispatchEvent(new Event('focus'));
+                        }, 1500);
                       }
                     }, 500);
                     
