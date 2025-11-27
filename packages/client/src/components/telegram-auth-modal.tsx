@@ -31,17 +31,38 @@ export default function TelegramAuthModal() {
   useEffect(() => {
     if (!isOpen) return;
 
-    // Get bot username from environment
+    // Get bot username or bot_id from environment
+    // Telegram widget can use either username or bot_id
+    // bot_id is the numeric part before ':' in the bot token
     const username = import.meta.env.VITE_TELEGRAM_BOT_USERNAME;
+    const botId = import.meta.env.VITE_TELEGRAM_BOT_ID;
     
-    if (!username || username === 'your_bot_username') {
+    clientLogger.info('Telegram auth modal: checking configuration', { 
+      username, 
+      botId,
+      hasUsername: !!username,
+      hasBotId: !!botId,
+      origin: window.location.origin 
+    });
+    
+    // Prefer bot_id over username (more reliable)
+    // bot_id is the numeric ID from the token (part before ':')
+    const botIdentifier = botId || username;
+    
+    if (!botIdentifier || botIdentifier === 'your_bot_username') {
       setShowFallback(true);
-      setError('Telegram authentication is not configured. Please contact the administrator.');
+      setError('Telegram authentication is not configured. Please set VITE_TELEGRAM_BOT_ID (preferred) or VITE_TELEGRAM_BOT_USERNAME.');
+      clientLogger.error('VITE_TELEGRAM_BOT_ID or VITE_TELEGRAM_BOT_USERNAME not configured');
       return;
     }
     
-    setBotUsername(username);
-    const authUrl = `${window.location.origin}/api/auth/telegram/callback`;
+    // bot_id is numeric, username is string - both work with data-telegram-login
+    setBotUsername(botIdentifier);
+    // Remove trailing slash from origin if present
+    const origin = window.location.origin.replace(/\/$/, '');
+    const authUrl = `${origin}/api/auth/telegram/callback`;
+    
+    clientLogger.info('Telegram auth modal: configured', { botIdentifier, authUrl, usingBotId: !!botId });
 
     // Handle message from callback window
     const handleMessage = async (event: MessageEvent) => {
@@ -99,6 +120,8 @@ export default function TelegramAuthModal() {
       // Wait for script to load, then create widget
       const createWidget = () => {
         if (!container.querySelector('script[data-telegram-login]')) {
+          clientLogger.info('Creating Telegram widget', { botUsername, authUrl });
+          
           const widgetScript = document.createElement('script');
           widgetScript.async = true;
           widgetScript.src = 'https://telegram.org/js/telegram-widget.js?22';
@@ -108,18 +131,32 @@ export default function TelegramAuthModal() {
           widgetScript.setAttribute('data-request-access', 'write');
           widgetScript.setAttribute('data-userpic', 'true');
           
-          widgetScript.onerror = () => {
-            clientLogger.error('Failed to create Telegram widget');
+          widgetScript.onload = () => {
+            clientLogger.info('Telegram widget script loaded successfully');
+          };
+          
+          widgetScript.onerror = (error) => {
+            clientLogger.error('Failed to create Telegram widget', error);
             setError('Failed to initialize Telegram authentication. Please refresh the page.');
+            setShowFallback(true);
           };
           
           container.appendChild(widgetScript);
+          
+          clientLogger.info('Telegram widget script appended to container');
           
           // Check if widget was created after a delay
           const checkWidget = setInterval(() => {
             const iframe = container.querySelector('iframe');
             const link = container.querySelector('a');
-            if (iframe || link) {
+            const button = container.querySelector('button');
+            
+            if (iframe || link || button) {
+              clientLogger.info('Telegram widget rendered successfully', { 
+                hasIframe: !!iframe, 
+                hasLink: !!link, 
+                hasButton: !!button 
+              });
               setWidgetReady(true);
               setShowFallback(false);
               clearInterval(checkWidget);
@@ -195,11 +232,46 @@ export default function TelegramAuthModal() {
             style={{ minHeight: '60px', minWidth: '200px' }}
           />
           
-          {/* Show loading message while widget is loading */}
-          {botUsername && !widgetReady && !showFallback && (
-            <p className="text-sm text-muted-foreground text-center">
-              Loading Telegram authentication widget...
-            </p>
+          {/* Always show button if bot is configured, even while widget loads */}
+          {botUsername && (
+            <div className="w-full flex flex-col gap-2">
+              {!widgetReady && !showFallback && (
+                <p className="text-sm text-muted-foreground text-center mb-2">
+                  Loading Telegram authentication widget...
+                </p>
+              )}
+              
+              {/* Show button immediately - widget will appear above it if it loads */}
+              <Button
+                variant="default"
+                size="lg"
+                className="w-full bg-[#0088cc] hover:bg-[#0077b3] text-white"
+                onClick={() => {
+                  // Try to click widget if it exists
+                  const container = widgetContainerRef.current;
+                  if (container) {
+                    const iframe = container.querySelector('iframe');
+                    const link = container.querySelector('a');
+                    const button = container.querySelector('button');
+                    
+                    if (iframe) {
+                      // Widget loaded, try to trigger it
+                      (iframe as HTMLIFrameElement).contentWindow?.postMessage('click', '*');
+                    } else if (link) {
+                      (link as HTMLAnchorElement).click();
+                    } else if (button) {
+                      (button as HTMLButtonElement).click();
+                    } else {
+                      // Widget not loaded, show message
+                      setError('Telegram widget is still loading. Please wait a moment and try again.');
+                    }
+                  }
+                }}
+              >
+                <LogIn className="h-4 w-4 mr-2" />
+                Login with Telegram
+              </Button>
+            </div>
           )}
           
           {/* Show error and retry button if widget failed to load */}
