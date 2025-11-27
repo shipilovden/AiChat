@@ -22,6 +22,8 @@ export default function TelegramAuthModal() {
   const scriptLoadedRef = useRef(false);
   const [botUsername, setBotUsername] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [widgetReady, setWidgetReady] = useState(false);
+  const [showFallback, setShowFallback] = useState(false);
 
   // Modal should be open if not authenticated and not loading
   const isOpen = !isLoading && !isAuthenticated;
@@ -33,6 +35,7 @@ export default function TelegramAuthModal() {
     const username = import.meta.env.VITE_TELEGRAM_BOT_USERNAME;
     
     if (!username || username === 'your_bot_username') {
+      setShowFallback(true);
       setError('Telegram authentication is not configured. Please contact the administrator.');
       return;
     }
@@ -113,10 +116,22 @@ export default function TelegramAuthModal() {
           container.appendChild(widgetScript);
           
           // Check if widget was created after a delay
+          const checkWidget = setInterval(() => {
+            const iframe = container.querySelector('iframe');
+            const link = container.querySelector('a');
+            if (iframe || link) {
+              setWidgetReady(true);
+              setShowFallback(false);
+              clearInterval(checkWidget);
+            }
+          }, 200);
+          
+          // Timeout after 3 seconds
           setTimeout(() => {
+            clearInterval(checkWidget);
             if (!container.querySelector('iframe') && !container.querySelector('a')) {
               clientLogger.warn('Telegram widget did not render');
-              setError('Telegram authentication widget failed to load. Please refresh the page.');
+              setShowFallback(true);
             }
           }, 3000);
         }
@@ -138,7 +153,7 @@ export default function TelegramAuthModal() {
           setTimeout(() => {
             clearInterval(checkScript);
             if (!container.querySelector('iframe') && !container.querySelector('a')) {
-              setError('Telegram authentication widget failed to load. Please refresh the page.');
+              setShowFallback(true);
             }
           }, 5000);
         }
@@ -167,31 +182,67 @@ export default function TelegramAuthModal() {
         </DialogHeader>
         
         <div className="flex flex-col items-center gap-4 py-4">
-          {error ? (
+          {error && error.includes('not configured') ? (
             <div className="w-full p-3 bg-destructive/10 border border-destructive/20 rounded-md">
               <p className="text-sm text-destructive text-center">{error}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full mt-2"
-                onClick={() => window.location.reload()}
-              >
-                Refresh Page
-              </Button>
             </div>
-          ) : (
-            <>
-              <div 
-                ref={widgetContainerRef} 
-                className="telegram-login-container flex justify-center w-full"
-                style={{ minHeight: '60px' }}
-              />
-              {!botUsername && (
-                <p className="text-sm text-muted-foreground text-center">
-                  Loading authentication...
+          ) : null}
+          
+          {/* Telegram Widget Container */}
+          <div 
+            ref={widgetContainerRef} 
+            className="telegram-login-container flex justify-center w-full"
+            style={{ minHeight: '60px', minWidth: '200px' }}
+          />
+          
+          {/* Fallback button - always show if bot username is set, or if widget failed */}
+          {(showFallback || (botUsername && !widgetReady)) && (
+            <div className="w-full flex flex-col gap-2">
+              <Button
+                variant="default"
+                size="lg"
+                className="w-full bg-[#0088cc] hover:bg-[#0077b3] text-white"
+                onClick={() => {
+                  if (botUsername) {
+                    // Try to trigger widget manually
+                    const container = widgetContainerRef.current;
+                    if (container) {
+                      const iframe = container.querySelector('iframe');
+                      const link = container.querySelector('a');
+                      if (iframe) {
+                        (iframe as HTMLIFrameElement).click();
+                      } else if (link) {
+                        (link as HTMLAnchorElement).click();
+                      } else {
+                        // Open Telegram OAuth manually
+                        const authUrl = `${window.location.origin}/api/auth/telegram/callback`;
+                        window.open(
+                          `https://oauth.telegram.org/auth?bot_id=${botUsername}&origin=${encodeURIComponent(window.location.origin)}&request_access=write&return_to=${encodeURIComponent(authUrl)}`,
+                          '_blank',
+                          'width=500,height=600'
+                        );
+                      }
+                    }
+                  } else {
+                    setError('Telegram bot username is not configured. Please contact the administrator.');
+                  }
+                }}
+              >
+                <LogIn className="h-4 w-4 mr-2" />
+                Login with Telegram
+              </Button>
+              {!widgetReady && botUsername && (
+                <p className="text-xs text-muted-foreground text-center">
+                  If the button above doesn't work, click here
                 </p>
               )}
-            </>
+            </div>
+          )}
+          
+          {!botUsername && !error && (
+            <p className="text-sm text-muted-foreground text-center">
+              Loading authentication...
+            </p>
           )}
         </div>
       </DialogContent>
