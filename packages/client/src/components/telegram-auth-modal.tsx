@@ -66,19 +66,33 @@ export default function TelegramAuthModal() {
 
     // Handle message from callback window
     const handleMessage = async (event: MessageEvent) => {
+      clientLogger.info('Message received in modal', { 
+        origin: event.origin, 
+        expectedOrigin: window.location.origin,
+        data: event.data 
+      });
+      
       // Verify origin for security
       if (event.origin !== window.location.origin) {
+        clientLogger.warn('Message origin mismatch', { 
+          received: event.origin, 
+          expected: window.location.origin 
+        });
         return;
       }
 
       if (event.data?.type === 'telegram-auth-success') {
         try {
           const { user, sessionId } = event.data;
-          clientLogger.info('Telegram auth success received', { userId: user.id });
+          clientLogger.info('Telegram auth success received', { userId: user.id, sessionId });
           
           // Update auth context directly with user and session
           setUser(user, sessionId);
           setError(null);
+          
+          // Force check auth to update state
+          // The modal will close automatically when isAuthenticated becomes true
+          clientLogger.info('User authenticated, modal should close');
         } catch (error) {
           clientLogger.error('Telegram login error:', error);
           setError('Authentication failed. Please try again.');
@@ -90,6 +104,27 @@ export default function TelegramAuthModal() {
     };
 
     window.addEventListener('message', handleMessage);
+    
+    // Also check localStorage for auth success (fallback if postMessage fails)
+    const checkLocalStorage = setInterval(() => {
+      try {
+        const stored = localStorage.getItem('telegram-auth-success');
+        if (stored) {
+          const message = JSON.parse(stored);
+          if (message.type === 'telegram-auth-success') {
+            clientLogger.info('Found auth success in localStorage', message);
+            localStorage.removeItem('telegram-auth-success');
+            handleMessage({ 
+              origin: window.location.origin, 
+              data: message 
+            } as MessageEvent);
+            clearInterval(checkLocalStorage);
+          }
+        }
+      } catch (e) {
+        // Ignore errors
+      }
+    }, 500);
 
     // Load Telegram Widget script if not already loaded
     if (!scriptLoadedRef.current) {
@@ -323,7 +358,29 @@ export default function TelegramAuthModal() {
                     const oauthUrl = `https://oauth.telegram.org/auth?bot_id=${botUsername}&origin=${encodeURIComponent(window.location.origin)}&request_access=write&return_to=${encodeURIComponent(authUrl)}`;
                     
                     clientLogger.info('Opening Telegram OAuth manually', { oauthUrl });
-                    window.open(oauthUrl, '_blank', 'width=500,height=600');
+                    
+                    // Open in popup window so we can receive postMessage
+                    const popup = window.open(
+                      oauthUrl, 
+                      'telegram-auth',
+                      'width=500,height=600,scrollbars=yes,resizable=yes'
+                    );
+                    
+                    // Listen for popup to close (user completed auth)
+                    const checkPopup = setInterval(() => {
+                      if (popup?.closed) {
+                        clearInterval(checkPopup);
+                        clientLogger.info('OAuth popup closed, checking auth status');
+                        // Check if user is now authenticated
+                        setTimeout(() => {
+                          // Force re-check authentication
+                          window.location.reload();
+                        }, 500);
+                      }
+                    }, 500);
+                    
+                    // Cleanup after 5 minutes
+                    setTimeout(() => clearInterval(checkPopup), 300000);
                   } else {
                     // Only username, can't open OAuth manually
                     clientLogger.warn('Widget not accessible and no bot_id available', { botUsername });

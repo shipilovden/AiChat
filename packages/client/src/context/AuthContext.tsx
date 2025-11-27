@@ -30,6 +30,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     checkAuth();
   }, []);
 
+  // Also check auth when window receives focus (user might have completed auth in popup)
+  useEffect(() => {
+    const handleFocus = () => {
+      // Small delay to allow postMessage to be processed first
+      setTimeout(() => {
+        checkAuth();
+      }, 500);
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [checkAuth]);
+
   const checkAuth = useCallback(async () => {
     try {
       setIsLoading(true);

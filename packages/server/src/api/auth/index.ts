@@ -197,21 +197,63 @@ export function authRouter(): express.Router {
       logger.info(`[Auth] User ${telegramUser.id} (${telegramUser.firstName}) logged in via callback`);
 
       // Return HTML page that sends message to opener window
+      // Try multiple methods to ensure message is received
       res.send(`
+        <!DOCTYPE html>
         <html>
           <head>
             <title>Authentication Successful</title>
+            <meta charset="UTF-8">
           </head>
-          <body>
-            <h1>Authentication Successful</h1>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>✅ Authentication Successful</h1>
             <p>You can close this window.</p>
+            <p style="color: #666; font-size: 12px;">This window will close automatically...</p>
             <script>
-              window.opener?.postMessage({
-                type: 'telegram-auth-success',
-                user: ${JSON.stringify(telegramUser)},
-                sessionId: '${sessionId}'
-              }, '*');
-              setTimeout(() => window.close(), 1000);
+              (function() {
+                const userData = ${JSON.stringify(telegramUser)};
+                const sessionId = '${sessionId}';
+                const message = {
+                  type: 'telegram-auth-success',
+                  user: userData,
+                  sessionId: sessionId
+                };
+                
+                console.log('Sending auth success message', message);
+                
+                // Try to send message to opener
+                if (window.opener && !window.opener.closed) {
+                  try {
+                    window.opener.postMessage(message, window.location.origin);
+                    console.log('Message sent to opener');
+                  } catch (e) {
+                    console.error('Error sending message to opener:', e);
+                  }
+                }
+                
+                // Also try to send to parent (if in iframe)
+                if (window.parent !== window) {
+                  try {
+                    window.parent.postMessage(message, window.location.origin);
+                    console.log('Message sent to parent');
+                  } catch (e) {
+                    console.error('Error sending message to parent:', e);
+                  }
+                }
+                
+                // Store in localStorage as fallback
+                try {
+                  localStorage.setItem('telegram-auth-success', JSON.stringify(message));
+                  console.log('Message stored in localStorage');
+                } catch (e) {
+                  console.error('Error storing in localStorage:', e);
+                }
+                
+                // Close window after a delay
+                setTimeout(function() {
+                  window.close();
+                }, 2000);
+              })();
             </script>
           </body>
         </html>
