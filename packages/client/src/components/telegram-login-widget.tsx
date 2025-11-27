@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import clientLogger from '@/lib/logger';
+import { Button } from './ui/button';
+import { LogIn } from 'lucide-react';
 
 /**
  * Telegram Login Widget Component
@@ -12,11 +14,20 @@ export default function TelegramLoginWidget() {
   const { setUser } = useAuth();
   const widgetContainerRef = useRef<HTMLDivElement>(null);
   const scriptLoadedRef = useRef(false);
+  const [showFallback, setShowFallback] = useState(false);
+  const [botUsername, setBotUsername] = useState<string | null>(null);
 
   useEffect(() => {
     // Get bot username from environment
-    // You can set this via VITE_TELEGRAM_BOT_USERNAME env variable
-    const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME || 'your_bot_username';
+    const username = import.meta.env.VITE_TELEGRAM_BOT_USERNAME;
+    
+    if (!username || username === 'your_bot_username') {
+      clientLogger.warn('VITE_TELEGRAM_BOT_USERNAME not configured, showing fallback button');
+      setShowFallback(true);
+      return;
+    }
+    
+    setBotUsername(username);
     const authUrl = `${window.location.origin}/api/auth/telegram/callback`;
 
     // Handle message from callback window
@@ -52,6 +63,13 @@ export default function TelegramLoginWidget() {
         const script = document.createElement('script');
         script.src = 'https://telegram.org/js/telegram-widget.js?22';
         script.async = true;
+        script.onload = () => {
+          clientLogger.info('Telegram widget script loaded');
+        };
+        script.onerror = () => {
+          clientLogger.error('Failed to load Telegram widget script');
+          setShowFallback(true);
+        };
         document.body.appendChild(script);
       }
       
@@ -59,7 +77,7 @@ export default function TelegramLoginWidget() {
     }
 
     // Create widget in container
-    if (widgetContainerRef.current) {
+    if (widgetContainerRef.current && botUsername) {
       const container = widgetContainerRef.current;
       container.innerHTML = '';
       
@@ -75,35 +93,74 @@ export default function TelegramLoginWidget() {
           widgetScript.setAttribute('data-request-access', 'write');
           widgetScript.setAttribute('data-userpic', 'true');
           
+          widgetScript.onerror = () => {
+            clientLogger.error('Failed to create Telegram widget');
+            setShowFallback(true);
+          };
+          
           container.appendChild(widgetScript);
+          
+          // Check if widget was created after a delay
+          setTimeout(() => {
+            if (!container.querySelector('iframe') && !container.querySelector('a')) {
+              clientLogger.warn('Telegram widget did not render, showing fallback');
+              setShowFallback(true);
+            }
+          }, 2000);
         }
       };
 
       // Try to create widget immediately, or wait for script to load
-      if (document.querySelector('script[src*="telegram-widget.js"]')) {
-        createWidget();
-      } else {
-        const checkScript = setInterval(() => {
-          if (document.querySelector('script[src*="telegram-widget.js"]')) {
+      const checkAndCreate = () => {
+        if (document.querySelector('script[src*="telegram-widget.js"]')) {
+          createWidget();
+        } else {
+          const checkScript = setInterval(() => {
+            if (document.querySelector('script[src*="telegram-widget.js"]')) {
+              clearInterval(checkScript);
+              createWidget();
+            }
+          }, 100);
+          
+          // Cleanup after 5 seconds and show fallback
+          setTimeout(() => {
             clearInterval(checkScript);
-            createWidget();
-          }
-        }, 100);
-        
-        // Cleanup after 5 seconds
-        setTimeout(() => clearInterval(checkScript), 5000);
-      }
+            if (!container.querySelector('iframe') && !container.querySelector('a')) {
+              setShowFallback(true);
+            }
+          }, 5000);
+        }
+      };
+
+      checkAndCreate();
     }
 
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [setUser]);
+  }, [setUser, botUsername]);
+
+  // Fallback button if widget doesn't load or bot username not configured
+  if (showFallback || !botUsername) {
+    return (
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full text-xs"
+        onClick={() => {
+          alert('Telegram login is not configured. Please set VITE_TELEGRAM_BOT_USERNAME environment variable.');
+        }}
+      >
+        <LogIn className="h-3 w-3 mr-2" />
+        Login with Telegram
+      </Button>
+    );
+  }
 
   return (
     <div 
       ref={widgetContainerRef} 
-      className="telegram-login-container flex justify-center"
+      className="telegram-login-container flex justify-center w-full"
       style={{ minHeight: '40px' }}
     />
   );
