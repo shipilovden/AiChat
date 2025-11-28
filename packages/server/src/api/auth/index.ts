@@ -1,7 +1,7 @@
 import express from 'express';
 import { logger } from '@elizaos/core';
 import { validateTelegramAuth, convertToTelegramUser } from './telegram';
-import { createSession, getSessionUser, deleteSession, getSessionByTelegramId } from '../../middleware/session';
+import { createSession, getSessionUser, deleteSession, getSessionByTelegramId, getSessionByAuthToken } from '../../middleware/session';
 import type { TelegramAuthData, TelegramUser } from '../../types/telegram';
 
 /**
@@ -339,6 +339,111 @@ export function authRouter(): express.Router {
           </body>
         </html>
       `);
+    }
+  });
+
+  /**
+   * GET /api/auth/telegram/check
+   * Checks if authentication token has been used to create a session
+   * Used for polling from client when user authenticates via bot
+   */
+  router.get('/telegram/check', (req: express.Request, res: express.Response) => {
+    const token = req.query.token as string;
+
+    if (!token) {
+      return res.status(400).json({
+        error: 'Token is required'
+      });
+    }
+
+      // Find session by auth token
+      const session = getSessionByAuthToken(token);
+
+    if (session) {
+      const user: TelegramUser = {
+        id: session.telegramId,
+        firstName: session.firstName,
+        lastName: session.lastName,
+        username: session.username,
+        photoUrl: session.photoUrl,
+      };
+
+      return res.json({
+        authenticated: true,
+        user,
+        sessionId: session.sessionId,
+      });
+    }
+
+    return res.json({
+      authenticated: false,
+    });
+  });
+
+  /**
+   * POST /api/auth/telegram/bot/login
+   * Creates a session from bot authentication
+   * Called by bot when user sends /start with auth token
+   */
+  router.post('/telegram/bot/login', async (req: express.Request, res: express.Response) => {
+    try {
+      const { telegramId, firstName, lastName, username, photoUrl, authToken } = req.body;
+
+      if (!telegramId || !firstName) {
+        return res.status(400).json({
+          error: 'telegramId and firstName are required'
+        });
+      }
+
+      // Check if session already exists for this user
+      let sessionUser = getSessionByTelegramId(telegramId);
+
+      if (!sessionUser) {
+        // Create new session with auth token
+        const sessionId = createSession({
+          telegramId,
+          firstName,
+          lastName,
+          username,
+          photoUrl,
+          authToken, // Store auth token in session
+        });
+
+        sessionUser = getSessionUser(sessionId);
+        logger.info(`[Auth] Created session from bot for user ${telegramId} with token ${authToken}`);
+      } else {
+        // Update existing session and add auth token if not present
+        sessionUser.lastActivity = new Date();
+        if (authToken && !sessionUser.authToken) {
+          sessionUser.authToken = authToken;
+        }
+        logger.info(`[Auth] Updated existing session for user ${telegramId}`);
+      }
+
+      if (!sessionUser) {
+        return res.status(500).json({
+          error: 'Failed to create session'
+        });
+      }
+
+      const user: TelegramUser = {
+        id: sessionUser.telegramId,
+        firstName: sessionUser.firstName,
+        lastName: sessionUser.lastName,
+        username: sessionUser.username,
+        photoUrl: sessionUser.photoUrl,
+      };
+
+      res.json({
+        success: true,
+        user,
+        sessionId: sessionUser.sessionId,
+      });
+    } catch (error) {
+      logger.error('[Auth] Bot login error:', error);
+      res.status(500).json({
+        error: 'Internal server error'
+      });
     }
   });
 

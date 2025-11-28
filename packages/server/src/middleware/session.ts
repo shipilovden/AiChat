@@ -38,21 +38,46 @@ setInterval(() => {
 /**
  * Creates a new user session
  */
-export function createSession(user: Omit<SessionUser, 'sessionId' | 'createdAt' | 'lastActivity'>): string {
+export function createSession(user: Omit<SessionUser, 'sessionId' | 'createdAt' | 'lastActivity'> & { authToken?: string }): string {
   const sessionId = generateSessionId();
   const now = new Date();
-  
+
   const session: SessionUser = {
     ...user,
     sessionId,
     createdAt: now,
     lastActivity: now,
+    authToken: user.authToken,
   };
-  
+
   sessions.set(sessionId, session);
-  logger.debug(`[Session] Created session ${sessionId} for user ${user.telegramId}`);
-  
+  logger.debug(`[Session] Created session ${sessionId} for user ${user.telegramId}${user.authToken ? ` with auth token` : ''}`);
+
   return sessionId;
+}
+
+/**
+ * Gets session by auth token
+ */
+export function getSessionByAuthToken(authToken: string): SessionUser | null {
+  for (const session of sessions.values()) {
+    if (session.authToken === authToken) {
+      // Check if session expired
+      const now = Date.now();
+      const sessionAge = now - session.lastActivity.getTime();
+
+      if (sessionAge > SESSION_TIMEOUT_MS) {
+        sessions.delete(session.sessionId);
+        return null;
+      }
+
+      // Update last activity
+      session.lastActivity = new Date();
+
+      return session;
+    }
+  }
+  return null;
 }
 
 /**
@@ -110,6 +135,30 @@ export function getSessionByTelegramId(telegramId: number): SessionUser | null {
     }
   }
   
+  return null;
+}
+
+/**
+ * Gets session by auth token
+ */
+export function getSessionByAuthToken(authToken: string): SessionUser | null {
+  for (const session of sessions.values()) {
+    if (session.authToken === authToken) {
+      // Check if session expired
+      const now = Date.now();
+      const sessionAge = now - session.lastActivity.getTime();
+
+      if (sessionAge > SESSION_TIMEOUT_MS) {
+        sessions.delete(session.sessionId);
+        return null;
+      }
+
+      // Update last activity
+      session.lastActivity = new Date();
+
+      return session;
+    }
+  }
   return null;
 }
 

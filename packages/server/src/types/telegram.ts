@@ -34,5 +34,6 @@ export interface SessionUser {
   sessionId: string;
   createdAt: Date;
   lastActivity: Date;
+  authToken?: string; // Optional auth token for bot authentication flow
 }
 

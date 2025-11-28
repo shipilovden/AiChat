@@ -307,8 +307,90 @@ const plugin: Plugin = {
       async (params: any) => {
         const { message, runtime } = params;
         
-        // Check if message is a /me command
+        // Get Telegram ID from message metadata
+        const telegramId = 
+          message?.metadata?.raw?.from?.id ||
+          message?.metadata?.raw?.user?.id ||
+          message?.metadata?.sourceId ||
+          message?.metadata?.raw?.userId;
+
         const messageText = message?.content?.text?.trim();
+        
+        // Handle /start command with auth token
+        if (messageText?.startsWith('/start ')) {
+          const startParam = messageText.split(' ')[1]; // Get token after /start
+          
+          if (startParam && startParam.startsWith('auth_')) {
+            try {
+              logger.info(`[Telegram Auth] User ${telegramId} started bot with auth token: ${startParam}`);
+              
+              // Get user info from Telegram message
+              const firstName = message?.metadata?.raw?.from?.first_name || 'User';
+              const lastName = message?.metadata?.raw?.from?.last_name;
+              const username = message?.metadata?.raw?.from?.username;
+              const photoUrl = message?.metadata?.raw?.from?.photo_url;
+
+              // Create session on server
+              const baseUrl = process.env.ELIZA_SERVER_URL || process.env.SERVER_URL || 'http://localhost:3000';
+              const apiUrl = `${baseUrl}/api/auth/telegram/bot/login`;
+              
+              const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  telegramId,
+                  firstName,
+                  lastName,
+                  username,
+                  photoUrl,
+                  authToken: startParam,
+                }),
+              });
+
+              if (response.ok) {
+                const data = await response.json();
+                logger.info(`[Telegram Auth] Session created for user ${telegramId}`);
+                
+                // Send success message to user
+                if (runtime && message?.roomId) {
+                  await runtime.messageService.handleMessage(
+                    runtime,
+                    {
+                      ...message,
+                      content: {
+                        text: '✅ Авторизация успешна! Теперь вы можете использовать команду /me для получения информации о профиле.',
+                        source: message.content.source || 'telegram',
+                      },
+                    },
+                    async () => {}
+                  );
+                }
+              } else {
+                logger.error(`[Telegram Auth] Failed to create session for user ${telegramId}`);
+                if (runtime && message?.roomId) {
+                  await runtime.messageService.handleMessage(
+                    runtime,
+                    {
+                      ...message,
+                      content: {
+                        text: '❌ Ошибка при авторизации. Пожалуйста, попробуйте снова.',
+                        source: message.content.source || 'telegram',
+                      },
+                    },
+                    async () => {}
+                  );
+                }
+              }
+            } catch (error) {
+              logger.error('[Telegram Auth] Error processing /start with auth token:', error);
+            }
+            return; // Stop further processing
+          }
+        }
+        
+        // Check if message is a /me command
         if (messageText === '/me' || messageText?.startsWith('/me ')) {
           try {
             // Get Telegram ID from message metadata

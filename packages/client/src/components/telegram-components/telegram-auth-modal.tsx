@@ -14,6 +14,7 @@ import type { TelegramUser } from '@/types/telegram';
 import { createTelegramAuthCallback } from './telegram-auth-callback';
 import { loadTelegramWidgetScript, createTelegramWidgetAsync } from './telegram-widget';
 import { openTelegramOAuthPopup, handleOAuthMessage } from './telegram-oauth-handler';
+import { getCurrentUser } from '@/lib/telegram-auth';
 
 /**
  * Telegram Authentication Modal
@@ -300,42 +301,105 @@ export default function TelegramAuthModal() {
       return;
     }
 
-    // Try to click widget if it exists
+    // Generate unique auth token for this login attempt
+    const authToken = `auth_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    
+    // Store token in localStorage for polling
+    localStorage.setItem('telegram-auth-token', authToken);
+    
+    // Build bot URL - use bot username if available, otherwise use bot ID
+    // Format: https://t.me/bot_username?start=auth_token
+    const botUrl = botUsername.includes('@') 
+      ? `https://t.me/${botUsername.replace('@', '')}?start=${authToken}`
+      : /^\d+$/.test(botUsername)
+      ? `https://t.me/${botUsername}?start=${authToken}`
+      : `https://t.me/${botUsername}?start=${authToken}`;
+
+    clientLogger.info('Opening Telegram bot for authentication', { botUrl, authToken });
+
+    // Open bot in Telegram (will open in Telegram app or web)
+    window.open(botUrl, '_blank');
+
+    // Start polling for session
+    setIsProcessingAuth(true);
+    setError(null);
+    
+    // Show instruction message
+    setError('Откройте бота в Telegram и нажмите /start для авторизации. Ожидание...');
+
+    // Poll for session creation
+    const pollInterval = setInterval(async () => {
+      try {
+        // Check if session was created by checking auth token
+        const storedToken = localStorage.getItem('telegram-auth-token');
+        if (!storedToken || storedToken !== authToken) {
+          // Token was cleared, auth might be complete
+          clearInterval(pollInterval);
+          await checkAuth();
+          const currentUser = await getCurrentUser();
+          if (currentUser) {
+            setUser(currentUser, '');
+            setAuthCompleted(true);
+            setIsProcessingAuth(false);
+            setError(null);
+            localStorage.removeItem('telegram-auth-token');
+            clientLogger.info('Authentication successful via bot');
+          }
+          return;
+        }
+
+        // Check server for session by polling auth status endpoint
+        const client = await import('@/lib/api-client-config').then(m => m.getElizaClient());
+        const response = await fetch(`${client.config.baseUrl}/api/auth/telegram/check?token=${authToken}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.authenticated && data.user) {
+            clearInterval(pollInterval);
+            setUser(data.user, data.sessionId);
+            setAuthCompleted(true);
+            setIsProcessingAuth(false);
+            setError(null);
+            localStorage.removeItem('telegram-auth-token');
+            await checkAuth();
+            clientLogger.info('Authentication successful via bot polling');
+          }
+        }
+      } catch (error) {
+        clientLogger.error('Error polling for authentication:', error);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    // Stop polling after 5 minutes
+    setTimeout(() => {
+      clearInterval(pollInterval);
+      if (isProcessingAuth) {
+        setIsProcessingAuth(false);
+        setError('Время ожидания истекло. Пожалуйста, попробуйте снова.');
+        localStorage.removeItem('telegram-auth-token');
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    // Try to click widget if it exists (fallback)
     const container = widgetContainerRef.current;
     if (container) {
       const iframe = container.querySelector('iframe');
       const link = container.querySelector('a');
       const button = container.querySelector('button');
 
-      clientLogger.info('Widget elements found', { hasIframe: !!iframe, hasLink: !!link, hasButton: !!button });
-
       if (link) {
-        clientLogger.info('Clicking widget link');
         (link as HTMLAnchorElement).click();
         return;
       } else if (button) {
-        clientLogger.info('Clicking widget button');
         (button as HTMLButtonElement).click();
         return;
-      } else if (iframe) {
-        clientLogger.info('Widget is iframe, trying to trigger');
-        try {
-          const iframeDoc = (iframe as HTMLIFrameElement).contentDocument ||
-            (iframe as HTMLIFrameElement).contentWindow?.document;
-          if (iframeDoc) {
-            const iframeButton = iframeDoc.querySelector('button, a');
-            if (iframeButton) {
-              (iframeButton as HTMLElement).click();
-              return;
-            }
-          }
-        } catch (e) {
-          clientLogger.warn('Cannot access iframe content (CORS)', e);
-        }
       }
     }
 
-    // Widget not loaded or not accessible - use OAuth popup fallback
+    // Widget not loaded or not accessible - use OAuth popup fallback (old method)
     const isNumericBotId = /^\d+$/.test(botUsername);
 
     if (isNumericBotId) {
