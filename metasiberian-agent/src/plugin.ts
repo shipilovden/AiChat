@@ -331,7 +331,21 @@ const plugin: Plugin = {
               const photoUrl = message?.metadata?.raw?.from?.photo_url;
 
               // Create session on server
-              const baseUrl = process.env.ELIZA_SERVER_URL || process.env.SERVER_URL || 'http://localhost:3000';
+              // Use environment variable or construct from request origin
+              // On Render.com, use the public URL from environment or construct it
+              let baseUrl = process.env.ELIZA_SERVER_URL || process.env.SERVER_URL;
+              
+              // If no URL set, try to construct from Render environment
+              if (!baseUrl) {
+                const renderServiceUrl = process.env.RENDER_EXTERNAL_URL;
+                if (renderServiceUrl) {
+                  baseUrl = renderServiceUrl;
+                } else {
+                  // Fallback to localhost for local development
+                  baseUrl = 'http://localhost:3000';
+                }
+              }
+              
               const apiUrl = `${baseUrl}/api/auth/telegram/bot/login`;
               
               const response = await fetch(apiUrl, {
@@ -424,7 +438,20 @@ const plugin: Plugin = {
             
             // Get user info from API endpoint
             // Try to get base URL from environment or use default
-            const baseUrl = process.env.ELIZA_SERVER_URL || process.env.SERVER_URL || 'http://localhost:3000';
+            // On Render.com, use the public URL from environment or construct it
+            let baseUrl = process.env.ELIZA_SERVER_URL || process.env.SERVER_URL;
+            
+            // If no URL set, try to construct from Render environment
+            if (!baseUrl) {
+              const renderServiceUrl = process.env.RENDER_EXTERNAL_URL;
+              if (renderServiceUrl) {
+                baseUrl = renderServiceUrl;
+              } else {
+                // Fallback to localhost for local development
+                baseUrl = 'http://localhost:3000';
+              }
+            }
+            
             const apiUrl = `${baseUrl}/api/auth/telegram/bot/user-info?telegramId=${telegramId}`;
             
             let sessionUser: any = null;
