@@ -394,9 +394,9 @@ export default function TelegramAuthModal() {
         // Use window.location.origin as fallback if client.config is not available
         const baseUrl = (await import('@/lib/api-client-config').then(m => m.getElizaClient()).catch(() => null))?.config?.baseUrl || window.location.origin;
         const checkUrl = `${baseUrl}/api/auth/telegram/check?token=${authToken}`;
-        
+
         clientLogger.debug('Polling for authentication', { checkUrl, authToken });
-        
+
         const response = await fetch(checkUrl, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
@@ -405,7 +405,7 @@ export default function TelegramAuthModal() {
         if (response.ok) {
           const data = await response.json();
           clientLogger.debug('Poll response', { authenticated: data.authenticated, hasUser: !!data.user });
-          
+
           if (data.authenticated && data.user) {
             clearInterval(pollInterval);
             setUser(data.user, data.sessionId);
@@ -418,17 +418,17 @@ export default function TelegramAuthModal() {
           }
         } else if (response.status === 404) {
           // Log 404 errors but continue polling (endpoint might not be ready yet)
-          clientLogger.warn('Auth endpoint returned 404, continuing to poll', { 
-            status: response.status, 
-            url: checkUrl 
+          clientLogger.warn('Auth endpoint returned 404, continuing to poll', {
+            status: response.status,
+            url: checkUrl
           });
         } else {
           // Other errors - log but continue polling
           const errorText = await response.text().catch(() => 'Unknown error');
-          clientLogger.error('Auth endpoint error', { 
-            status: response.status, 
+          clientLogger.error('Auth endpoint error', {
+            status: response.status,
             error: errorText,
-            url: checkUrl 
+            url: checkUrl
           });
         }
       } catch (error) {

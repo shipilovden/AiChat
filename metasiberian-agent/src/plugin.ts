@@ -472,14 +472,26 @@ const plugin: Plugin = {
             
             // If no URL set, try to construct from Render environment
             if (!baseUrl) {
+              // Try RENDER_EXTERNAL_URL first (set by Render.com automatically)
               const renderServiceUrl = process.env.RENDER_EXTERNAL_URL;
               if (renderServiceUrl) {
                 baseUrl = renderServiceUrl;
               } else {
-                // Fallback to localhost for local development
-                baseUrl = 'http://localhost:3000';
+                // Try to get from PORT and service name (Render.com pattern)
+                const port = process.env.PORT || '3000';
+                const serviceName = process.env.RENDER_SERVICE_NAME;
+                if (serviceName) {
+                  // Construct Render URL: https://{service-name}.onrender.com
+                  baseUrl = `https://${serviceName}.onrender.com`;
+                } else {
+                  // Fallback to localhost for local development
+                  baseUrl = `http://localhost:${port}`;
+                }
               }
             }
+            
+            // Ensure baseUrl doesn't end with /
+            baseUrl = baseUrl.replace(/\/$/, '');
             
             const apiUrl = `${baseUrl}/api/auth/telegram/bot/user-info?telegramId=${telegramId}`;
             
