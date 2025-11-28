@@ -229,6 +229,17 @@ const plugin: Plugin = {
    * @param token - Telegram bot token
    */
   async registerTelegramCommands(token: string): Promise<void> {
+    /**
+     * Register Telegram bot commands using setMyCommands API
+     * Documentation: https://core.telegram.org/bots/api#setmycommands
+     * 
+     * Parameters:
+     * - commands: Array of BotCommand objects (required)
+     *   - command: Command name (1-32 characters, lowercase, no spaces)
+     *   - description: Command description (1-256 characters)
+     * - scope: BotCommandScope (optional, defaults to BotCommandScopeDefault)
+     * - language_code: ISO 639-1 language code (optional, for multilingual support)
+     */
     const commands = [
       {
         command: 'me',
@@ -246,9 +257,12 @@ const plugin: Plugin = {
         },
         body: JSON.stringify({
           commands: commands,
-          // Optional: set scope and language_code if needed
+          // Set language code for Russian users
+          // This makes commands appear in Russian locale
+          language_code: 'ru',
+          // Scope is optional - defaults to 'default' (all users)
+          // Can be customized for specific chats, groups, or users if needed
           // scope: { type: 'default' },
-          // language_code: 'ru',
         }),
       });
 
