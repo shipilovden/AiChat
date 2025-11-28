@@ -1,14 +1,20 @@
 import express from 'express';
 import { logger } from '@elizaos/core';
+import type { DatabaseAdapter } from '@elizaos/core';
 import { validateTelegramAuth, convertToTelegramUser } from './telegram';
-import { createSession, getSessionUser, deleteSession, getSessionByTelegramId, getSessionByAuthToken } from '../../middleware/session';
+import { createSession, getSessionUser, deleteSession, getSessionByTelegramId, getSessionByAuthToken, initializeSessionStorage } from '../../middleware/session';
 import type { TelegramAuthData, TelegramUser } from '../../types/telegram';
 
 /**
  * Creates the authentication router
  */
-export function authRouter(): express.Router {
+export function authRouter(database?: DatabaseAdapter): express.Router {
   const router = express.Router();
+
+  // Initialize session storage with database if provided
+  if (database) {
+    initializeSessionStorage(database);
+  }
 
   /**
    * POST /api/auth/telegram/login
@@ -49,7 +55,7 @@ export function authRouter(): express.Router {
       const telegramUser = convertToTelegramUser(authData);
 
       // Create session
-      const sessionId = createSession({
+      const sessionId = await createSession({
         telegramId: telegramUser.id,
         firstName: telegramUser.firstName,
         lastName: telegramUser.lastName,
@@ -76,7 +82,7 @@ export function authRouter(): express.Router {
    * GET /api/auth/telegram/bot/user-info
    * Returns user info by Telegram ID (for bot commands)
    */
-  router.get('/telegram/bot/user-info', (req: express.Request, res: express.Response) => {
+  router.get('/telegram/bot/user-info', async (req: express.Request, res: express.Response) => {
     const telegramId = req.query.telegramId;
     
     if (!telegramId) {
@@ -92,7 +98,7 @@ export function authRouter(): express.Router {
       });
     }
     
-    const sessionUser = getSessionByTelegramId(telegramIdNum);
+    const sessionUser = await getSessionByTelegramId(telegramIdNum);
     
     if (!sessionUser) {
       return res.status(404).json({ 
@@ -121,7 +127,7 @@ export function authRouter(): express.Router {
    * GET /api/auth/me
    * Returns current authenticated user
    */
-  router.get('/me', (req: express.Request & { sessionUser?: any }, res: express.Response) => {
+  router.get('/me', async (req: express.Request & { sessionUser?: any }, res: express.Response) => {
     const sessionId = 
       req.headers.authorization?.replace('Bearer ', '') ||
       req.headers['x-session-id'] as string ||
@@ -133,7 +139,7 @@ export function authRouter(): express.Router {
       });
     }
 
-    const sessionUser = getSessionUser(sessionId);
+    const sessionUser = await getSessionUser(sessionId);
 
     if (!sessionUser) {
       return res.status(401).json({ 
@@ -234,7 +240,7 @@ export function authRouter(): express.Router {
       const telegramUser = convertToTelegramUser(authData);
 
       // Create session
-      const sessionId = createSession({
+      const sessionId = await createSession({
         telegramId: telegramUser.id,
         firstName: telegramUser.firstName,
         lastName: telegramUser.lastName,
@@ -347,7 +353,7 @@ export function authRouter(): express.Router {
    * Checks if authentication token has been used to create a session
    * Used for polling from client when user authenticates via bot
    */
-  router.get('/telegram/check', (req: express.Request, res: express.Response) => {
+  router.get('/telegram/check', async (req: express.Request, res: express.Response) => {
     const token = req.query.token as string;
 
     if (!token) {
@@ -356,8 +362,8 @@ export function authRouter(): express.Router {
       });
     }
 
-      // Find session by auth token
-      const session = getSessionByAuthToken(token);
+    // Find session by auth token
+    const session = await getSessionByAuthToken(token);
 
     if (session) {
       const user: TelegramUser = {
@@ -396,11 +402,11 @@ export function authRouter(): express.Router {
       }
 
       // Check if session already exists for this user
-      let sessionUser = getSessionByTelegramId(telegramId);
+      let sessionUser = await getSessionByTelegramId(telegramId);
 
       if (!sessionUser) {
         // Create new session with auth token
-        const sessionId = createSession({
+        const sessionId = await createSession({
           telegramId,
           firstName,
           lastName,
@@ -409,13 +415,24 @@ export function authRouter(): express.Router {
           authToken, // Store auth token in session
         });
 
-        sessionUser = getSessionUser(sessionId);
+        sessionUser = await getSessionUser(sessionId);
         logger.info(`[Auth] Created session from bot for user ${telegramId} with token ${authToken}`);
       } else {
         // Update existing session and add auth token if not present
-        sessionUser.lastActivity = new Date();
+        // Note: lastActivity is updated automatically in getSessionByTelegramId
+        // If we need to update authToken, we should do it via database update
         if (authToken && !sessionUser.authToken) {
-          sessionUser.authToken = authToken;
+          // Update auth token in database
+          const db = (database as any)?.db;
+          if (db) {
+            const { eq } = await import('drizzle-orm');
+            const { telegramSessionTable } = await import('@elizaos/plugin-sql');
+            await db
+              .update(telegramSessionTable)
+              .set({ authToken })
+              .where(eq(telegramSessionTable.sessionId, sessionUser.sessionId));
+            sessionUser.authToken = authToken;
+          }
         }
         logger.info(`[Auth] Updated existing session for user ${telegramId}`);
       }
@@ -451,7 +468,7 @@ export function authRouter(): express.Router {
    * POST /api/auth/logout
    * Logs out the current user
    */
-  router.post('/logout', (req: express.Request, res: express.Response) => {
+  router.post('/logout', async (req: express.Request, res: express.Response) => {
     const sessionId = 
       req.headers.authorization?.replace('Bearer ', '') ||
       req.headers['x-session-id'] as string ||
@@ -463,7 +480,7 @@ export function authRouter(): express.Router {
       });
     }
 
-    const deleted = deleteSession(sessionId);
+    const deleted = await deleteSession(sessionId);
 
     if (deleted) {
       logger.info(`[Auth] Session ${sessionId} deleted`);

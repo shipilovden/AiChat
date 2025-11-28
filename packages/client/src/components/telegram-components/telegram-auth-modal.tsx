@@ -303,17 +303,17 @@ export default function TelegramAuthModal() {
 
     // Generate unique auth token for this login attempt
     const authToken = `auth_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    
+
     // Store token in localStorage for polling
     localStorage.setItem('telegram-auth-token', authToken);
-    
+
     // Build bot URL - use bot username if available, otherwise use bot ID
     // Format: https://t.me/bot_username?start=auth_token
-    const botUrl = botUsername.includes('@') 
+    const botUrl = botUsername.includes('@')
       ? `https://t.me/${botUsername.replace('@', '')}?start=${authToken}`
       : /^\d+$/.test(botUsername)
-      ? `https://t.me/${botUsername}?start=${authToken}`
-      : `https://t.me/${botUsername}?start=${authToken}`;
+        ? `https://t.me/${botUsername}?start=${authToken}`
+        : `https://t.me/${botUsername}?start=${authToken}`;
 
     clientLogger.info('Opening Telegram bot for authentication', { botUrl, authToken });
 
@@ -323,7 +323,7 @@ export default function TelegramAuthModal() {
     // Start polling for session
     setIsProcessingAuth(true);
     setError(null);
-    
+
     // Show instruction message
     setError('Откройте бота в Telegram и нажмите /start для авторизации. Ожидание...');
 
