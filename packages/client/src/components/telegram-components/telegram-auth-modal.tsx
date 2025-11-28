@@ -32,8 +32,12 @@ export default function TelegramAuthModal() {
   const [isProcessingAuth, setIsProcessingAuth] = useState(false);
   const [authCompleted, setAuthCompleted] = useState(false);
 
-  // Modal should be open if not authenticated
-  const isOpen = !isLoading && !isAuthenticated;
+  // Check if opened in Telegram Mini App
+  const isTelegramMiniApp = typeof window !== 'undefined' && !!(window as any).Telegram?.WebApp;
+
+  // Modal should be open ONLY in regular browser (not in Telegram Mini App)
+  // In Mini App, auto-login is handled in AuthContext
+  const isOpen = !isLoading && !isAuthenticated && !isTelegramMiniApp;
 
   useEffect(() => {
     if (!isOpen) {

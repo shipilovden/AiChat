@@ -40,10 +40,86 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  // Check authentication on mount
+  // Check if opened as Telegram Mini App and auto-login if already authenticated
   useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+    const checkTelegramMiniApp = async () => {
+      // Check if running in Telegram Mini App
+      // Telegram WebApp is available as window.Telegram.WebApp when opened from Telegram
+      const tg = (window as any).Telegram?.WebApp;
+      if (!tg) {
+        // Not in Telegram Mini App, do normal check
+        checkAuth();
+        return;
+      }
+
+      clientLogger.info('Detected Telegram Mini App', {
+        version: tg.version,
+        platform: tg.platform,
+      });
+
+      try {
+        // Get user data from Telegram WebApp
+        // initDataUnsafe contains user info without validation (faster, but less secure)
+        // For production, should validate initData using bot token
+        const initData = tg.initDataUnsafe;
+        const telegramId = initData?.user?.id;
+
+        if (!telegramId) {
+          clientLogger.warn('Telegram Mini App detected but no user ID found');
+          checkAuth();
+          return;
+        }
+
+        clientLogger.info('Telegram Mini App user detected', { 
+          telegramId,
+          firstName: initData?.user?.first_name,
+          username: initData?.user?.username,
+        });
+
+        // Check if user has existing session (from /start command)
+        const client = await import('@/lib/api-client-config').then(m => m.getElizaClient());
+        const response = await fetch(
+          `${client.config.baseUrl}/api/auth/telegram/bot/user-info?telegramId=${telegramId}`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.user && data.sessionId) {
+            // User has existing session - auto-login
+            const user: TelegramUser = {
+              id: data.user.telegramId,
+              firstName: data.user.firstName,
+              lastName: data.user.lastName,
+              username: data.user.username,
+              photoUrl: data.user.photoUrl,
+            };
+            setUser(user, data.sessionId);
+            clientLogger.info('Auto-logged in user from Telegram Mini App', { telegramId });
+            setIsLoading(false); // Set loading to false since we're done
+            return; // Skip normal checkAuth
+          }
+        }
+
+        // No session found - user needs to authenticate
+        // But since they're in Mini App, they should use /start command first
+        clientLogger.info('No existing session for Telegram Mini App user', { telegramId });
+        setIsLoading(false); // Set loading to false
+        // Don't call checkAuth() - let modal show for authentication
+      } catch (error) {
+        clientLogger.error('Error checking Telegram Mini App auth:', error);
+        // Fallback to normal check
+        checkAuth();
+      }
+    };
+
+    checkTelegramMiniApp();
+  }, [checkAuth, setUser]);
 
   // Also check auth when window receives focus (user might have completed auth in popup)
   useEffect(() => {
