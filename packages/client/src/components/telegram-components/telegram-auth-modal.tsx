@@ -314,26 +314,26 @@ export default function TelegramAuthModal() {
 
     // Build bot URL - use bot username if available, otherwise use bot ID
     // For tg:// protocol: use username for domain, or bot ID for bot parameter
-    const botName = botUsername.includes('@') 
-      ? botUsername.replace('@', '') 
+    const botName = botUsername.includes('@')
+      ? botUsername.replace('@', '')
       : botUsername;
-    
+
     // Check if botName is numeric (bot ID) or username
     const isNumericId = /^\d+$/.test(botName);
-    
+
     // Build tg:// URL - different format for username vs ID
     const tgProtocolUrl = isNumericId
       ? `tg://resolve?start=${authToken}&bot=${botName}` // For bot ID
       : `tg://resolve?domain=${botName}&start=${authToken}`; // For username
-    
+
     const webUrl = `https://t.me/${botName}?start=${authToken}`;
 
-    clientLogger.info('Opening Telegram bot for authentication', { 
-      tgProtocolUrl, 
-      webUrl, 
+    clientLogger.info('Opening Telegram bot for authentication', {
+      tgProtocolUrl,
+      webUrl,
       authToken,
       isNumericId,
-      botName 
+      botName
     });
 
     // Try to open in Telegram app first using tg:// protocol
@@ -342,15 +342,15 @@ export default function TelegramAuthModal() {
     link.href = tgProtocolUrl;
     link.style.display = 'none';
     document.body.appendChild(link);
-    
+
     // Try clicking the tg:// link
     link.click();
-    
+
     // Remove link immediately
     setTimeout(() => {
       document.body.removeChild(link);
     }, 100);
-    
+
     // Fallback: if tg:// doesn't work (user doesn't have Telegram app),
     // open web version after a short delay
     // Note: This will open in browser, but user can still interact with bot
@@ -393,13 +393,19 @@ export default function TelegramAuthModal() {
         // Check server for session by polling auth status endpoint
         // Use window.location.origin as fallback if client.config is not available
         const baseUrl = (await import('@/lib/api-client-config').then(m => m.getElizaClient()).catch(() => null))?.config?.baseUrl || window.location.origin;
-        const response = await fetch(`${baseUrl}/api/auth/telegram/check?token=${authToken}`, {
+        const checkUrl = `${baseUrl}/api/auth/telegram/check?token=${authToken}`;
+        
+        clientLogger.debug('Polling for authentication', { checkUrl, authToken });
+        
+        const response = await fetch(checkUrl, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
         });
 
         if (response.ok) {
           const data = await response.json();
+          clientLogger.debug('Poll response', { authenticated: data.authenticated, hasUser: !!data.user });
+          
           if (data.authenticated && data.user) {
             clearInterval(pollInterval);
             setUser(data.user, data.sessionId);
@@ -408,11 +414,26 @@ export default function TelegramAuthModal() {
             setError(null);
             localStorage.removeItem('telegram-auth-token');
             await checkAuth();
-            clientLogger.info('Authentication successful via bot polling');
+            clientLogger.info('Authentication successful via bot polling', { userId: data.user.id });
           }
+        } else if (response.status === 404) {
+          // Log 404 errors but continue polling (endpoint might not be ready yet)
+          clientLogger.warn('Auth endpoint returned 404, continuing to poll', { 
+            status: response.status, 
+            url: checkUrl 
+          });
+        } else {
+          // Other errors - log but continue polling
+          const errorText = await response.text().catch(() => 'Unknown error');
+          clientLogger.error('Auth endpoint error', { 
+            status: response.status, 
+            error: errorText,
+            url: checkUrl 
+          });
         }
       } catch (error) {
         clientLogger.error('Error polling for authentication:', error);
+        // Continue polling even on network errors
       }
     }, 2000); // Poll every 2 seconds
 

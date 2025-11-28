@@ -337,17 +337,36 @@ const plugin: Plugin = {
               
               // If no URL set, try to construct from Render environment
               if (!baseUrl) {
+                // Try RENDER_EXTERNAL_URL first (set by Render.com automatically)
                 const renderServiceUrl = process.env.RENDER_EXTERNAL_URL;
                 if (renderServiceUrl) {
                   baseUrl = renderServiceUrl;
                 } else {
-                  // Fallback to localhost for local development
-                  baseUrl = 'http://localhost:3000';
+                  // Try to get from PORT and service name (Render.com pattern)
+                  // Render sets RENDER_SERVICE_NAME and PORT
+                  const port = process.env.PORT || '3000';
+                  const serviceName = process.env.RENDER_SERVICE_NAME;
+                  if (serviceName) {
+                    // Construct Render URL: https://{service-name}.onrender.com
+                    baseUrl = `https://${serviceName}.onrender.com`;
+                  } else {
+                    // Fallback to localhost for local development
+                    baseUrl = `http://localhost:${port}`;
+                  }
                 }
               }
               
+              // Ensure baseUrl doesn't end with /
+              baseUrl = baseUrl.replace(/\/$/, '');
+              
               const apiUrl = `${baseUrl}/api/auth/telegram/bot/login`;
               
+              logger.info(`[Telegram Auth] Attempting to create session for user ${telegramId}`, {
+                apiUrl,
+                baseUrl,
+                hasAuthToken: !!startParam,
+              });
+
               const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
@@ -365,8 +384,11 @@ const plugin: Plugin = {
 
               if (response.ok) {
                 const data = await response.json();
-                logger.info(`[Telegram Auth] Session created for user ${telegramId}`);
-                
+                logger.info(`[Telegram Auth] Session created for user ${telegramId}`, {
+                  sessionId: data.sessionId,
+                  userId: data.user?.id,
+                });
+
                 // Send success message to user
                 if (runtime && message?.roomId) {
                   await runtime.messageService.handleMessage(
@@ -382,14 +404,21 @@ const plugin: Plugin = {
                   );
                 }
               } else {
-                logger.error(`[Telegram Auth] Failed to create session for user ${telegramId}`);
+                const errorText = await response.text().catch(() => 'Unknown error');
+                logger.error(`[Telegram Auth] Failed to create session for user ${telegramId}`, {
+                  status: response.status,
+                  statusText: response.statusText,
+                  error: errorText,
+                  apiUrl,
+                });
+                
                 if (runtime && message?.roomId) {
                   await runtime.messageService.handleMessage(
                     runtime,
                     {
                       ...message,
                       content: {
-                        text: '❌ Ошибка при авторизации. Пожалуйста, попробуйте снова.',
+                        text: `❌ Ошибка при авторизации (${response.status}). Пожалуйста, попробуйте снова.`,
                         source: message.content.source || 'telegram',
                       },
                     },
