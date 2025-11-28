@@ -13,7 +13,7 @@ import { LogIn, RefreshCcw } from 'lucide-react';
 import type { TelegramUser } from '@/types/telegram';
 import { createTelegramAuthCallback } from './telegram-auth-callback';
 import { loadTelegramWidgetScript, createTelegramWidgetAsync } from './telegram-widget';
-import { openTelegramOAuthPopup, handleOAuthMessage } from './telegram-oauth-handler';
+import { handleOAuthMessage } from './telegram-oauth-handler';
 import { getCurrentUser } from '@/lib/telegram-auth';
 
 /**
@@ -89,8 +89,9 @@ export default function TelegramAuthModal() {
           setIsProcessingAuth(true);
           setError(null);
 
-          const client = await import('@/lib/api-client-config').then(m => m.getElizaClient());
-          const resp = await fetch(`${client.config.baseUrl}/api/auth/telegram/login`, {
+          // Use window.location.origin as fallback if client.config is not available
+          const baseUrl = (await import('@/lib/api-client-config').then(m => m.getElizaClient()).catch(() => null))?.config?.baseUrl || window.location.origin;
+          const resp = await fetch(`${baseUrl}/api/auth/telegram/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(event.data),
@@ -353,8 +354,9 @@ export default function TelegramAuthModal() {
         }
 
         // Check server for session by polling auth status endpoint
-        const client = await import('@/lib/api-client-config').then(m => m.getElizaClient());
-        const response = await fetch(`${client.config.baseUrl}/api/auth/telegram/check?token=${authToken}`, {
+        // Use window.location.origin as fallback if client.config is not available
+        const baseUrl = (await import('@/lib/api-client-config').then(m => m.getElizaClient()).catch(() => null))?.config?.baseUrl || window.location.origin;
+        const response = await fetch(`${baseUrl}/api/auth/telegram/check?token=${authToken}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
         });
@@ -403,64 +405,9 @@ export default function TelegramAuthModal() {
       }
     }
 
-    // Widget not loaded or not accessible - use OAuth popup fallback (old method)
-    const isNumericBotId = /^\d+$/.test(botUsername);
-
-    if (isNumericBotId) {
-      setIsProcessingAuth(true);
-      setError(null);
-      openTelegramOAuthPopup(botUsername, {
-        onAuthSuccess: async (user: TelegramUser, sessionId: string): Promise<void> => {
-          setUser(user, sessionId);
-          setError(null);
-          setIsProcessingAuth(true);
-          clientLogger.info('OAuth popup: user received, validating session on server', { user });
-
-          try {
-            // wait for server-side validation / session creation
-            await checkAuth();
-            setAuthCompleted(true);
-            clientLogger.info('Server confirmed session after OAuth popup; recreating widget to show user name/avatar');
-
-            // Recreate widget - it will now show button with user name
-            setTimeout(() => {
-              const container = widgetContainerRef.current;
-              if (container && botUsername) {
-                container.innerHTML = '';
-                createTelegramWidgetAsync(container, {
-                  botUsername,
-                  onReady: () => {
-                    setWidgetReady(true);
-                    setShowFallback(false);
-                    clientLogger.info('Widget recreated after OAuth, should show button with user name');
-                  },
-                  onError: (err) => {
-                    clientLogger.error('Failed to recreate widget after OAuth', err);
-                    setShowFallback(true);
-                  },
-                });
-              }
-            }, 300);
-          } catch (e) {
-            clientLogger.error('checkAuth failed after OAuth popup', e);
-            setError('Authentication verification failed. Please try again.');
-          } finally {
-            setIsProcessingAuth(false);
-          }
-        },
-        onAuthError: (errorMsg: string) => {
-          setError(errorMsg);
-          setIsProcessingAuth(false);
-        },
-        checkAuth: async () => {
-          await checkAuth();
-          setIsProcessingAuth(false);
-        },
-      });
-    } else {
-      clientLogger.warn('Widget not accessible and no bot_id available', { botUsername });
-      setError('Telegram widget is not ready. Please wait a moment and try again, or refresh the page. If the problem persists, please set VITE_TELEGRAM_BOT_ID (numeric) instead of VITE_TELEGRAM_BOT_USERNAME.');
-    }
+    // Widget not loaded - but handleLoginButtonClick will handle opening the bot
+    // No need for OAuth popup fallback - always use bot-based authentication
+    clientLogger.info('Widget not accessible, but bot-based auth will be used via handleLoginButtonClick');
   };
 
   const handleRetry = () => {
