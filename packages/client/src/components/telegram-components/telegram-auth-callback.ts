@@ -11,12 +11,7 @@ import type { TelegramUser } from '@/types/telegram';
  * 2. Second time when user clicks button with their name (we close modal)
  */
 export function createTelegramAuthCallback(
-  callbacks: {
-    onAuthSuccess: (user: TelegramUser, sessionId: string) => void;
-    onAuthError: (error: string) => void;
-    isAuthCompleted: () => boolean;
-    getTelegramUser: () => TelegramUser | null;
-  }
+  callbacks: TelegramAuthCallbackConfig
 ): (user: any) => Promise<void> {
   return async (user: any) => {
     clientLogger.info('Telegram widget callback received', {

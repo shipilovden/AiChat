@@ -67,15 +67,26 @@ export default function TelegramAuthModal() {
 
     // Setup OAuth message handler
     const handleMessage = (event: MessageEvent) => {
+      clientLogger.info('Received postMessage', { origin: event.origin, data: event.data });
       handleOAuthMessage(event, {
-        onAuthSuccess: (user, sessionId) => {
-          setIsProcessingAuth(true);
-          setUser(user, sessionId);
-          setError(null);
-          setTimeout(() => {
+        onAuthSuccess: async (user, sessionId) => {
+          try {
+            setIsProcessingAuth(true);
+            clientLogger.info('OAuth message indicates success, setting user and verifying with server', { user });
+
+            setUser(user, sessionId);
+            setError(null);
+
+            // wait for server-side session to be created/validated
+            await checkAuth();
+            setAuthCompleted(true);
+            clientLogger.info('Server session confirmed, modal should close');
+          } catch (e) {
+            clientLogger.error('checkAuth failed after postMessage auth', e);
+            setError('Authentication verification failed. Please try again.');
+          } finally {
             setIsProcessingAuth(false);
-            clientLogger.info('User authenticated, modal should close');
-          }, 1000);
+          }
         },
         onAuthError: (errorMsg) => {
           setError(errorMsg);
@@ -122,31 +133,42 @@ export default function TelegramAuthModal() {
 
     // Create global callback function
     const authCallback = createTelegramAuthCallback({
-      onAuthSuccess: (user, sessionId) => {
+      onAuthSuccess: async (user, sessionId) => {
         setUser(user, sessionId);
         setError(null);
-        setAuthCompleted(true);
-        setIsProcessingAuth(false);
-        clientLogger.info('User authorized, recreating widget to show button with name');
+        setIsProcessingAuth(true);
+        clientLogger.info('Widget callback: user received, validating session on server', { user });
 
-        // Recreate widget - it will now show button with user name
-        setTimeout(() => {
-          const container = widgetContainerRef.current;
-          if (container && botIdentifier) {
-            container.innerHTML = '';
-            createTelegramWidgetAsync(container, {
-              botUsername: botIdentifier,
-              onReady: () => {
-                setWidgetReady(true);
-                setShowFallback(false);
-              },
-              onError: (err) => {
-                clientLogger.error('Failed to recreate widget', err);
-                setShowFallback(true);
-              },
-            });
-          }
-        }, 500);
+        try {
+          // wait for server-side validation / session creation
+          await checkAuth();
+          setAuthCompleted(true);
+          clientLogger.info('Server confirmed session; recreating widget to show user name/avatar');
+
+          // Recreate widget - it will now show button with user name
+          setTimeout(() => {
+            const container = widgetContainerRef.current;
+            if (container && botIdentifier) {
+              container.innerHTML = '';
+              createTelegramWidgetAsync(container, {
+                botUsername: botIdentifier,
+                onReady: () => {
+                  setWidgetReady(true);
+                  setShowFallback(false);
+                },
+                onError: (err) => {
+                  clientLogger.error('Failed to recreate widget', err);
+                  setShowFallback(true);
+                },
+              });
+            }
+          }, 300);
+        } catch (e) {
+          clientLogger.error('checkAuth failed in widget callback', e);
+          setError('Authentication verification failed. Please try again.');
+        } finally {
+          setIsProcessingAuth(false);
+        }
       },
       onAuthError: (errorMsg) => {
         setError(errorMsg);
@@ -237,9 +259,28 @@ export default function TelegramAuthModal() {
         onAuthSuccess: (user, sessionId) => {
           setUser(user, sessionId);
           setError(null);
+          setAuthCompleted(true);
+          setIsProcessingAuth(false);
+          clientLogger.info('User authenticated via OAuth popup, recreating widget to show button with name');
+
+          // Recreate widget - it will now show button with user name
           setTimeout(() => {
-            setIsProcessingAuth(false);
-            clientLogger.info('User authenticated via OAuth popup');
+            const container = widgetContainerRef.current;
+            if (container && botUsername) {
+              container.innerHTML = '';
+              createTelegramWidgetAsync(container, {
+                botUsername,
+                onReady: () => {
+                  setWidgetReady(true);
+                  setShowFallback(false);
+                  clientLogger.info('Widget recreated after OAuth, should show button with user name');
+                },
+                onError: (err) => {
+                  clientLogger.error('Failed to recreate widget after OAuth', err);
+                  setShowFallback(true);
+                },
+              });
+            }
           }, 500);
         },
         onAuthError: (errorMsg) => {

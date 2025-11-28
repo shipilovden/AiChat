@@ -2,7 +2,7 @@ import clientLogger from '@/lib/logger';
 import type { TelegramUser } from '@/types/telegram';
 
 export interface TelegramOAuthCallbacks {
-  onAuthSuccess: (user: TelegramUser, sessionId: string) => void;
+  onAuthSuccess: (user: TelegramUser, sessionId: string) => Promise<void>;
   onAuthError: (error: string) => void;
   checkAuth: () => Promise<void>;
 }
@@ -62,7 +62,7 @@ export function openTelegramOAuthPopup(
               
               // Process the message
               if (message.user && message.sessionId) {
-                callbacks.onAuthSuccess(message.user, message.sessionId);
+                await callbacks.onAuthSuccess(message.user, message.sessionId);
                 return;
               }
             }
@@ -87,10 +87,10 @@ export function openTelegramOAuthPopup(
 /**
  * Handles postMessage from OAuth callback window
  */
-export function handleOAuthMessage(
+export async function handleOAuthMessage(
   event: MessageEvent,
   callbacks: TelegramOAuthCallbacks
-): void {
+): Promise<void> {
   // Filter out noise messages (setImmediate, etc.)
   if (event.data && typeof event.data === 'object' && 'type' in event.data) {
     clientLogger.info('Message received in modal', {
@@ -117,7 +117,7 @@ export function handleOAuthMessage(
     try {
       const { user, sessionId } = event.data;
       clientLogger.info('Telegram auth success received via postMessage', { userId: user.id, sessionId });
-      callbacks.onAuthSuccess(user, sessionId);
+      await callbacks.onAuthSuccess(user, sessionId);
     } catch (error) {
       clientLogger.error('Telegram login error:', error);
       callbacks.onAuthError('Authentication failed. Please try again.');
