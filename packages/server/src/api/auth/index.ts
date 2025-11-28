@@ -519,6 +519,23 @@ export function authRouter(database?: DatabaseAdapter): express.Router {
     }
   });
 
+  // Add a test endpoint to verify router is working
+  router.get('/test', (req: express.Request, res: express.Response) => {
+    logger.info('[Auth] Test endpoint called');
+    res.json({ 
+      message: 'Auth router is working',
+      routes: [
+        'POST /api/auth/telegram/login',
+        'GET /api/auth/telegram/check',
+        'POST /api/auth/telegram/bot/login',
+        'GET /api/auth/telegram/bot/user-info',
+        'GET /api/auth/me',
+        'POST /api/auth/logout'
+      ]
+    });
+  });
+
+  logger.info('[Auth] Auth router created and ready');
   return router;
 }
 
