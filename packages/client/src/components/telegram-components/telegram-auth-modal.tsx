@@ -134,7 +134,7 @@ export default function TelegramAuthModal() {
 
     // Create global callback function
     const authCallback = createTelegramAuthCallback({
-      onAuthSuccess: async (user, sessionId) => {
+      onAuthSuccess: async (user: TelegramUser, sessionId: string): Promise<void> => {
         setUser(user, sessionId);
         setError(null);
         setIsProcessingAuth(true);
