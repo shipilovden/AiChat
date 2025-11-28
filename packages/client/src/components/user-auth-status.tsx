@@ -37,29 +37,72 @@ export default function UserAuthStatus() {
   if (isAuthenticated && telegramUser) {
     const displayName = telegramUser.firstName + (telegramUser.lastName ? ` ${telegramUser.lastName}` : '');
     const initials = telegramUser.firstName[0] + (telegramUser.lastName?.[0] || '');
+    
+    // Get bot username from environment or use bot ID
+    const botUsername = import.meta.env.VITE_TELEGRAM_BOT_USERNAME;
+    const botId = import.meta.env.VITE_TELEGRAM_BOT_ID;
+    const botIdentifier = botUsername || botId;
+    
+    // Open bot in Telegram (user can use /me command there)
+    const telegramBotUrl = botIdentifier 
+      ? `https://t.me/${botIdentifier}`
+      : null;
 
     return (
       <SidebarMenuItem>
         <div className="flex flex-col gap-1 w-full">
-          <SidebarMenuButton className="rounded cursor-default hover:bg-sidebar-accent">
-            <div className="flex items-center gap-2 w-full">
-              <Avatar className="h-6 w-6">
-                {telegramUser.photoUrl ? (
-                  <AvatarImage src={telegramUser.photoUrl} alt={displayName} />
-                ) : null}
-                <AvatarFallback className="text-xs bg-sidebar-accent">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col items-start flex-1 min-w-0">
-                <span className="text-xs font-medium truncate w-full">{displayName}</span>
-                <div className="flex items-center gap-1">
-                  <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                  <span className="text-xs text-muted-foreground">Logged in</span>
+          {telegramBotUrl ? (
+            <SidebarMenuButton 
+              className="rounded cursor-pointer hover:bg-sidebar-accent"
+              asChild
+            >
+              <a 
+                href={telegramBotUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="no-underline"
+                title="Открыть бота в Telegram (используйте /me для информации о профиле)"
+              >
+                <div className="flex items-center gap-2 w-full">
+                  <Avatar className="h-6 w-6">
+                    {telegramUser.photoUrl ? (
+                      <AvatarImage src={telegramUser.photoUrl} alt={displayName} />
+                    ) : null}
+                    <AvatarFallback className="text-xs bg-sidebar-accent">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col items-start flex-1 min-w-0">
+                    <span className="text-xs font-medium truncate w-full">{displayName}</span>
+                    <div className="flex items-center gap-1">
+                      <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                      <span className="text-xs text-muted-foreground">Logged in</span>
+                    </div>
+                  </div>
+                </div>
+              </a>
+            </SidebarMenuButton>
+          ) : (
+            <SidebarMenuButton className="rounded cursor-default hover:bg-sidebar-accent">
+              <div className="flex items-center gap-2 w-full">
+                <Avatar className="h-6 w-6">
+                  {telegramUser.photoUrl ? (
+                    <AvatarImage src={telegramUser.photoUrl} alt={displayName} />
+                  ) : null}
+                  <AvatarFallback className="text-xs bg-sidebar-accent">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col items-start flex-1 min-w-0">
+                  <span className="text-xs font-medium truncate w-full">{displayName}</span>
+                  <div className="flex items-center gap-1">
+                    <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                    <span className="text-xs text-muted-foreground">Logged in</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          </SidebarMenuButton>
+            </SidebarMenuButton>
+          )}
           <Button
             variant="ghost"
             size="sm"

@@ -150,7 +150,12 @@ export function authRouter(): express.Router {
       photoUrl: sessionUser.photoUrl,
     };
 
-    res.json({ user, sessionId: sessionUser.sessionId });
+    res.json({ 
+      user, 
+      sessionId: sessionUser.sessionId,
+      createdAt: sessionUser.createdAt,
+      lastActivity: sessionUser.lastActivity,
+    });
   });
 
   /**
